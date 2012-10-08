@@ -364,6 +364,8 @@ service_find(channel_t *ch, unsigned int weight, const char *loginfo,
   /* First, try all services without stealing */
   for(i = off; i < cnt; i++) {
     t = vec[i];
+    if(t->s_status == SERVICE_RUNNING) 
+      return t;
     if(t->s_quality_index(t) < 10) {
       if(loginfo != NULL) {
          tvhlog(LOG_NOTICE, "Service",
@@ -375,9 +377,6 @@ service_find(channel_t *ch, unsigned int weight, const char *loginfo,
     }
     tvhlog(LOG_DEBUG, "Service", "%s: Probing adapter \"%s\" without stealing for service \"%s\"",
 	     loginfo, service_adapter_nicename(t), service_nicename(t));
-
-    if(t->s_status == SERVICE_RUNNING) 
-      return t;
     if((r = service_start(t, 0, 0)) == 0)
       return t;
     if(loginfo != NULL)
@@ -1162,6 +1161,7 @@ service_is_primary_epg(service_t *svc)
   service_t *ret = NULL, *t;
   if (!svc || !svc->s_ch) return 0;
   LIST_FOREACH(t, &svc->s_ch->ch_services, s_ch_link) {
+    if (!t->s_dvb_mux_instance) continue;
     if (!t->s_enabled || !t->s_dvb_eit_enable) continue;
     if (!ret || dvb_extra_prio(t->s_dvb_mux_instance->tdmi_adapter) > dvb_extra_prio(ret->s_dvb_mux_instance->tdmi_adapter))
       ret = t;
