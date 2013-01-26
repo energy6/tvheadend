@@ -200,6 +200,8 @@ typedef struct th_dvb_adapter {
 
   int tda_table_epollfd;
 
+  uint32_t tda_enabled;
+
   const char *tda_rootpath;
   char *tda_identifier;
   uint32_t tda_autodiscovery;
@@ -215,6 +217,7 @@ typedef struct th_dvb_adapter {
   uint32_t tda_diseqc_repeats;
   uint32_t tda_disable_pmt_monitor;
   int32_t  tda_full_mux_rx;
+  uint32_t tda_grace_period;
   char *tda_displayname;
 
   char *tda_fe_path;
@@ -227,6 +230,7 @@ typedef struct th_dvb_adapter {
 
   char *tda_demux_path;
 
+  char *tda_dvr_path;
   pthread_t tda_dvr_thread;
   th_pipe_t tda_dvr_pipe;
 
@@ -342,6 +346,8 @@ void dvb_adapter_stop (th_dvb_adapter_t *tda);
 
 void dvb_adapter_set_displayname(th_dvb_adapter_t *tda, const char *s);
 
+void dvb_adapter_set_enabled(th_dvb_adapter_t *tda, int on);
+
 void dvb_adapter_set_auto_discovery(th_dvb_adapter_t *tda, int on);
 
 void dvb_adapter_set_skip_initialscan(th_dvb_adapter_t *tda, int on);
@@ -368,6 +374,8 @@ void dvb_adapter_set_diseqc_repeats(th_dvb_adapter_t *tda,
 void dvb_adapter_set_disable_pmt_monitor(th_dvb_adapter_t *tda, int on);
 
 void dvb_adapter_set_full_mux_rx(th_dvb_adapter_t *tda, int r);
+
+void dvb_adapter_set_grace_period(th_dvb_adapter_t *tda, uint32_t p);
 
 void dvb_adapter_clone(th_dvb_adapter_t *dst, th_dvb_adapter_t *src);
 
@@ -543,7 +551,10 @@ void dvb_lnb_get_frequencies(const char *id,
 struct th_subscription;
 struct th_subscription *dvb_subscription_create_from_tdmi(th_dvb_mux_instance_t *tdmi,
 							  const char *name,
-							  streaming_target_t *st);
+							  streaming_target_t *st,
+							  const char *hostname,
+							  const char *username,
+							  const char *client);
 
 #endif /* DVB_H_ */
 

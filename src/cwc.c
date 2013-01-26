@@ -1635,11 +1635,20 @@ cwc_table_input(struct th_descrambler *td, struct service *t,
       tvhlog(LOG_DEBUG, "cwc", "Insert after unexpected reply");
     }
 
-    if (ct->cs_okchannel == -3 && t->s_prefcapid == st->es_pid) {
-      ep = calloc(1, sizeof(ecm_pid_t));
-      ep->ep_pid = t->s_prefcapid;
-      LIST_INSERT_HEAD(&ct->cs_pids, ep, ep_link);
-      tvhlog(LOG_DEBUG, "cwc", "Insert only one new ECM channel %d for service id %d", t->s_prefcapid, sid);
+    if (ct->cs_okchannel == -3 && t->s_prefcapid != 0) {
+      if (t->s_prefcapid == st->es_pid) {
+        ep = calloc(1, sizeof(ecm_pid_t));
+        ep->ep_pid = t->s_prefcapid;
+        LIST_INSERT_HEAD(&ct->cs_pids, ep, ep_link);
+        tvhlog(LOG_DEBUG, "cwc", "Insert only one new ECM channel %d for service id %d", t->s_prefcapid, sid);
+      } else {
+        // check if prefcapid wrong
+        struct elementary_stream *prefca = service_stream_find(t, t->s_prefcapid);
+
+        if (!prefca || prefca->es_type != SCT_CA) {
+          t->s_prefcapid = 0;
+        }
+      }
     }
 
     if (ct->cs_okchannel == -1 || (ct->cs_okchannel == -3 && t->s_prefcapid == 0)) {
@@ -1871,18 +1880,14 @@ cwc_emm_bulcrypt(cwc_t *cwc, uint8_t *data, int len)
   int match = 0;
 
   switch (data[0]) {
-  case 0x82: /* unique */
-  case 0x85: /* unique */
+  case 0x82: /* unique - bulcrypt (1 card) */
+  case 0x8a: /* unique - polaris  (1 card) */
+  case 0x85: /* unique - bulcrypt (4 cards) */
+  case 0x8b: /* unique - polaris  (4 cards) */
     match = len >= 10 && memcmp(data + 3, cwc->cwc_ua + 2, 3) == 0;
     break;
-  case 0x84: /* shared */
+  case 0x84: /* shared - (1024 cards) */
     match = len >= 10 && memcmp(data + 3, cwc->cwc_ua + 2, 2) == 0;
-    break;
-  case 0x8b: /* shared-unknown */
-    match = len >= 10 && memcmp(data + 4, cwc->cwc_ua + 2, 2) == 0;
-    break;
-  case 0x8a: /* global */
-    match = len >= 10 && memcmp(data + 4, cwc->cwc_ua + 2, 1) == 0;
     break;
   }
 
