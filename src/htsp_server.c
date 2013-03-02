@@ -557,7 +557,8 @@ htsp_build_dvrentry(dvr_entry_t *de, const char *method)
   dvr_config_t *cfg;
 
   htsmsg_add_u32(out, "id", de->de_id);
-  htsmsg_add_u32(out, "channel", de->de_channel->ch_id);
+  if (de->de_channel)
+    htsmsg_add_u32(out, "channel", de->de_channel->ch_id);
 
   htsmsg_add_s64(out, "start", de->de_start);
   htsmsg_add_s64(out, "stop", de->de_stop);
@@ -1965,12 +1966,12 @@ htsp_serve(int fd, void *opaque, struct sockaddr_storage *source,
  *  Fire up HTSP server
  */
 void
-htsp_init(void)
+htsp_init(const char *bindaddr)
 {
   extern int tvheadend_htsp_port_extra;
-  htsp_server = tcp_server_create(tvheadend_htsp_port, htsp_serve, NULL);
+  htsp_server = tcp_server_create(bindaddr, tvheadend_htsp_port, htsp_serve, NULL);
   if(tvheadend_htsp_port_extra)
-    htsp_server_2 = tcp_server_create(tvheadend_htsp_port_extra, htsp_serve, NULL);
+    htsp_server_2 = tcp_server_create(bindaddr, tvheadend_htsp_port_extra, htsp_serve, NULL);
 }
 
 /* **************************************************************************

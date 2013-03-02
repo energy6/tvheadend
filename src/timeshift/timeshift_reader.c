@@ -192,10 +192,11 @@ static timeshift_index_iframe_t *_timeshift_first_frame
 { 
   int end;
   timeshift_index_iframe_t *tsi = NULL;
-  timeshift_file_t *tsf = timeshift_filemgr_last(ts);
+  timeshift_file_t *tsf = timeshift_filemgr_oldest(ts);
   while (tsf && !tsi) {
-    if (!(tsi = TAILQ_FIRST(&tsf->iframes)))
+    if (!(tsi = TAILQ_FIRST(&tsf->iframes))) {
       tsf = timeshift_filemgr_next(tsf, &end, 0);
+    }
   }
   if (tsf)
     tsf->refcount--;
@@ -209,8 +210,9 @@ static timeshift_index_iframe_t *_timeshift_last_frame
   timeshift_index_iframe_t *tsi = NULL;
   timeshift_file_t *tsf = timeshift_filemgr_get(ts, 0);
   while (tsf && !tsi) {
-    if (!(tsi = TAILQ_LAST(&tsf->iframes, timeshift_index_iframe_list)))
+    if (!(tsi = TAILQ_LAST(&tsf->iframes, timeshift_index_iframe_list))) {
       tsf = timeshift_filemgr_prev(tsf, &end, 0);
+    }
   }
   if (tsf)
     tsf->refcount--;
@@ -227,6 +229,10 @@ static int _timeshift_skip
   int64_t                   sec  = req_time / (1000000 * TIMESHIFT_FILE_PERIOD);
   int                       back = (req_time < cur_time) ? 1 : 0;
   int                       end  = 0;
+  
+  /* Hold local ref */
+  if (cur_file)
+    cur_file->refcount++;
 
   /* Coarse search */
   if (!tsi) {
@@ -272,7 +278,7 @@ static int _timeshift_skip
   /* Find start/end of buffer */
   if (end) {
     if (back) {
-      tsf = timeshift_filemgr_last(ts);
+      tsf = timeshift_filemgr_oldest(ts);
       tsi = NULL;
       while (tsf && !tsi) {
         if (!(tsi = TAILQ_FIRST(&tsf->iframes)))
@@ -289,6 +295,9 @@ static int _timeshift_skip
       end = 1;
     }
   }
+
+  if (cur_file)
+    cur_file->refcount--;
 
   /* Done */
   *new_file = tsf;
@@ -313,12 +322,10 @@ static int _timeshift_read
 #endif
       *fd = open((*cur_file)->path, O_RDONLY);
     }
-    if (*cur_off) {
 #ifdef TSHFT_TRACE
-      tvhlog(LOG_DEBUG, "timeshift", "ts %d seek to %lu", ts->id, *cur_off);
+    tvhlog(LOG_DEBUG, "timeshift", "ts %d seek to %lu", ts->id, *cur_off);
 #endif
-      lseek(*fd, *cur_off, SEEK_SET);
-    }
+    lseek(*fd, *cur_off, SEEK_SET);
 
     /* Read msg */
     ssize_t r = _read_msg(*fd, sm);
@@ -346,7 +353,9 @@ static int _timeshift_read
     if (r == sizeof(size_t) || *cur_off > (*cur_file)->size) {
       close(*fd);
       *fd       = -1;
+      pthread_mutex_lock(&ts->rdwr_mutex);
       *cur_file = timeshift_filemgr_next(*cur_file, NULL, 0);
+      pthread_mutex_unlock(&ts->rdwr_mutex);
       *cur_off  = 0; // reset
       *wait     = 0;
 
@@ -354,7 +363,6 @@ static int _timeshift_read
     } else {
       streaming_message_t *ssm = _timeshift_find_sstart(*cur_file, (*sm)->sm_time);
       if (ssm && ssm->sm_data != ts->smt_start) {
-        printf("SENDING NEW SMT_START MESSAGE\n");
         streaming_target_deliver2(ts->output, streaming_msg_clone(ssm));
         if (ts->smt_start)
           streaming_start_unref(ts->smt_start);
@@ -631,9 +639,6 @@ void *timeshift_reader ( void *p )
       continue;
     }
 
-    /* File processing lock */
-    pthread_mutex_lock(&ts->rdwr_mutex);
-
     /* Calculate delivery time */
     deliver = (now - play_time) + TIMESHIFT_PLAY_BUF;
     deliver = (deliver * cur_speed) / 100;
@@ -655,8 +660,10 @@ void *timeshift_reader ( void *p )
         tvhlog(LOG_DEBUG, "timeshift", "ts %d skip to %"PRId64" from %"PRId64, ts->id, req_time, last_time);
 
         /* Find */
+        pthread_mutex_lock(&ts->rdwr_mutex);
         end = _timeshift_skip(ts, req_time, last_time,
                               cur_file, &tsf, &tsi);
+        pthread_mutex_unlock(&ts->rdwr_mutex);
         if (tsi)
           tvhlog(LOG_DEBUG, "timeshift", "ts %d skip found pkt @ %"PRId64, ts->id, tsi->time);
 
@@ -667,6 +674,8 @@ void *timeshift_reader ( void *p )
         }
 
         /* Position */
+        if (cur_file)
+          cur_file->refcount--;
         cur_file = tsf;
         if (tsi)
           cur_off = tsi->pos;
@@ -676,7 +685,6 @@ void *timeshift_reader ( void *p )
 
       /* Find packet */
       if (_timeshift_read(ts, &cur_file, &cur_off, &fd, &sm, &wait) == -1) {
-        pthread_mutex_unlock(&ts->rdwr_mutex);
         pthread_mutex_unlock(&ts->state_mutex);
         break;
       }
@@ -776,10 +784,11 @@ void *timeshift_reader ( void *p )
 
     /* Flush unwanted */
     } else if (ts->ondemand && cur_file) {
+      pthread_mutex_lock(&ts->rdwr_mutex);
       timeshift_filemgr_flush(ts, cur_file);
+      pthread_mutex_unlock(&ts->rdwr_mutex);
     }
 
-    pthread_mutex_unlock(&ts->rdwr_mutex);
     pthread_mutex_unlock(&ts->state_mutex);
   }
 

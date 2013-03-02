@@ -49,6 +49,7 @@
 #include "subscriptions.h"
 #include "imagecache.h"
 #include "timeshift.h"
+#include "tvhtime.h"
 
 /**
  *
@@ -421,8 +422,10 @@ build_record_channel ( channel_t *ch )
   htsmsg_add_str(c, "name", ch->ch_name);
   htsmsg_add_u32(c, "chid", ch->ch_id);
 
-  if(ch->ch_icon != NULL)
+  if(ch->ch_icon != NULL) {
+    htsmsg_add_imageurl(c, "chicon", "imagecache/%d", ch->ch_icon);
     htsmsg_add_str(c, "ch_icon", ch->ch_icon);
+  }
 
   buf[0] = 0;
   LIST_FOREACH(ctm, &ch->ch_ctms, ctm_channel_link) {
@@ -1389,8 +1392,8 @@ extjs_dvrlist(http_connection_t *hc, const char *remain, void *opaque,
 
     m = htsmsg_create_map();
 
+    htsmsg_add_str(m, "channel", DVR_CH_NAME(de));
     if(de->de_channel != NULL) {
-      htsmsg_add_str(m, "channel", de->de_channel->ch_name);
       if (de->de_channel->ch_icon)
         htsmsg_add_imageurl(m, "chicon", "imagecache/%d",
                             de->de_channel->ch_icon);
@@ -1974,6 +1977,12 @@ extjs_config(http_connection_t *hc, const char *remain, void *opaque)
     /* Misc */
     pthread_mutex_lock(&global_lock);
     m = config_get_all();
+
+    /* Time */
+    htsmsg_add_u32(m, "tvhtime_update_enabled", tvhtime_update_enabled);
+    htsmsg_add_u32(m, "tvhtime_ntp_enabled", tvhtime_ntp_enabled);
+    htsmsg_add_u32(m, "tvhtime_tolerance", tvhtime_tolerance);
+
     pthread_mutex_unlock(&global_lock);
 
     /* Image cache */
@@ -1982,6 +1991,7 @@ extjs_config(http_connection_t *hc, const char *remain, void *opaque)
     htsmsg_add_u32(m, "imagecache_enabled",     imagecache_enabled);
     htsmsg_add_u32(m, "imagecache_ok_period",   imagecache_ok_period);
     htsmsg_add_u32(m, "imagecache_fail_period", imagecache_fail_period);
+    htsmsg_add_u32(m, "imagecache_ignore_sslcert", imagecache_ignore_sslcert);
     pthread_mutex_unlock(&imagecache_mutex);
 #endif
 
@@ -2000,6 +2010,15 @@ extjs_config(http_connection_t *hc, const char *remain, void *opaque)
       save |= config_set_language(str);
     if (save)
       config_save();
+
+    /* Time */
+    if ((str = http_arg_get(&hc->hc_req_args, "tvhtime_update_enabled")))
+      tvhtime_set_update_enabled(!!str);
+    if ((str = http_arg_get(&hc->hc_req_args, "tvhtime_ntp_enabled")))
+      tvhtime_set_ntp_enabled(!!str);
+    if ((str = http_arg_get(&hc->hc_req_args, "tvhtime_tolerance")))
+      tvhtime_set_tolerance(atoi(str));
+
     pthread_mutex_unlock(&global_lock);
   
     /* Image Cache */
@@ -2011,6 +2030,8 @@ extjs_config(http_connection_t *hc, const char *remain, void *opaque)
       save |= imagecache_set_ok_period(atoi(str));
     if ((str = http_arg_get(&hc->hc_req_args, "imagecache_fail_period")))
       save |= imagecache_set_fail_period(atoi(str));
+    str = http_arg_get(&hc->hc_req_args, "imagecache_ignore_sslcert");
+    save |= imagecache_set_ignore_sslcert(!!str);
     if (save)
       imagecache_save();
     pthread_mutex_unlock(&imagecache_mutex);

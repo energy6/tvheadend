@@ -75,7 +75,13 @@
 #define CW_DUMP(buf, len, format, ...) \
   printf(format, __VA_ARGS__); int j; for (j = 0; j < len; ++j) printf("%02X ", buf[j]); printf("\n");
 
+#ifdef __GNUC__
+#include <features.h>
+#if __GNUC_PREREQ(4, 3)
 #pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+#endif
+
 #define MAX_CA  4
 #define MAX_INDEX 64
 #define KEY_SIZE  8
@@ -1010,6 +1016,10 @@ capmt_service_start(service_t *t)
   TAILQ_FOREACH(capmt, &capmts, capmt_link) {
     /* skip, if we're not active */
     if (!capmt->capmt_enabled)
+      continue;
+
+
+    if (!(t->s_dvb_mux_instance && t->s_dvb_mux_instance->tdmi_adapter))
       continue;
 
     tvhlog(LOG_INFO, "capmt",
